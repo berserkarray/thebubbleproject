@@ -25,6 +25,48 @@ def pca_background_subtraction(image):
     _, thresholded = cv2.threshold(projected_2d, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     return thresholded
 
+def edge_linking(binary_image):
+    # Create a copy of the binary image to store the linked edges
+    linked_image = np.zeros_like(binary_image)
+
+    # Find the starting point of an edge (the first white pixel)
+    start_point = np.argwhere(binary_image == 255)[0]
+    current_point = start_point
+
+    # Set the current direction to 0 (right direction)
+    current_direction = 0
+
+    while True:
+        # Mark the current point as part of the linked edge
+        linked_image[current_point[0], current_point[1]] = 255
+
+        # Check the neighbors in the current direction
+        neighbor_indices = [
+            (current_point[0] - 1, current_point[1]),  # Up
+            (current_point[0] - 1, current_point[1] + 1),  # Up-right
+            (current_point[0], current_point[1] + 1),  # Right
+            (current_point[0] + 1, current_point[1] + 1),  # Down-right
+            (current_point[0] + 1, current_point[1]),  # Down
+            (current_point[0] + 1, current_point[1] - 1),  # Down-left
+            (current_point[0], current_point[1] - 1),  # Left
+            (current_point[0] - 1, current_point[1] - 1)  # Up-left
+        ]
+
+        # Find the first neighbor that is part of the edge
+        for i in range(current_direction, current_direction + 8):
+            neighbor_index = i % 8
+            neighbor = neighbor_indices[neighbor_index]
+            if binary_image[neighbor[0], neighbor[1]] == 255:
+                # Set the current point and direction to the found neighbor
+                current_point = neighbor
+                current_direction = (neighbor_index + 5) % 8
+                break
+        else:
+            # If no edge pixel is found in the neighbors, the edge is complete
+            break
+
+    return linked_image
+
 def bubble_detection(image):
     if image.ndim == 2:
         gray = image
@@ -40,21 +82,28 @@ def bubble_detection(image):
     thresh = cv2.threshold(gray_mask, 200, 255, cv2.THRESH_BINARY)[1]
     # Apply adaptive thresholding
     thresh = cv2.adaptiveThreshold(thresh, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 5)
+    # Apply Canny edge detection
+    edges = cv2.Canny(thresh, 100, 200)
+
+    # Perform morphological operations to enhance the edges
+    kernel = np.ones((3, 3), np.uint8)
+    dilated = cv2.dilate(edges, kernel, iterations=1)
+    eroded = cv2.erode(dilated, kernel, iterations=1)
     # Find contours
-    contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # Draw contours and label bubbles with serial numbers
     for i, contour in enumerate(contours):
         (x,y,w,h) = cv2.boundingRect(contour)
-        if cv2.contourArea(contour) > 50 and cv2.contourArea(contour)<100:
-            cv2.rectangle(gray_mask, (x,y), (x+w,y+h), (0,255,0), 2)
-            cv2.putText(gray_mask, str(i+1), (x,y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
+        if cv2.contourArea(contour) > 30 and cv2.contourArea(contour)<50:
+            cv2.rectangle(gray_mask, (x,y), (x+w,y+h), (0,255,0), 1)
+            cv2.putText(gray_mask, str(i+1), (x,y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
     return gray_mask
 
 thresholded = pca_background_subtraction(image)
 gray_mask = bubble_detection(thresholded)
 
 # Display image
-imS = cv2.resize(gray_mask, (720, 960))
-cv2.imshow('image', imS)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# imS = cv2.resize(gray_mask, (720, 960))
+cv2.imwrite('image.jpg', gray_mask)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
